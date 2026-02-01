@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
@@ -28,8 +28,15 @@ YANDEX_CLOUD_MODEL = os.getenv("YANDEX_CLOUD_MODEL", "qwen3-235b-a22b-fp8/latest
 if not YANDEX_API_KEY or not YANDEX_FOLDER_ID:
     raise ValueError("YANDEX_API_KEY и YANDEX_FOLDER_ID должны быть установлены в .env файле")
 
-# Инициализация OpenAI клиента для Yandex Cloud
+# Инициализация синхронного клиента для Yandex Cloud
 client = OpenAI(
+    api_key=YANDEX_API_KEY,
+    base_url="https://rest-assistant.api.cloud.yandex.net/v1",
+    project=YANDEX_FOLDER_ID
+)
+
+# Инициализация асинхронного клиента для Yandex Cloud
+async_client = AsyncOpenAI(
     api_key=YANDEX_API_KEY,
     base_url="https://rest-assistant.api.cloud.yandex.net/v1",
     project=YANDEX_FOLDER_ID
@@ -90,38 +97,29 @@ async def upload_file_async(filename: str, content_type: str, extra_body: Option
     
     print(f"Загружаем файл {filename}...")
     
-    # Выполняем синхронную операцию в отдельном потоке
-    loop = asyncio.get_event_loop()
+    # Используем нативный асинхронный клиент
+    with open(file_path, "rb") as f:
+        file_response = await async_client.files.create(
+            file=(filename, f, content_type),
+            purpose="assistants",
+            extra_body=extra_body
+        )
     
-    def _upload():
-        with open(file_path, "rb") as f:
-            file_response = client.files.create(
-                file=(filename, f, content_type),
-                purpose="assistants",
-                extra_body=extra_body
-            )
-        return file_response.id
-    
-    file_id = await loop.run_in_executor(None, _upload)
-    print(f"Файл {filename} загружен с ID: {file_id}")
-    return file_id
+    print(f"Файл {filename} загружен с ID: {file_response.id}")
+    return file_response.id
 
 
 async def create_vector_store_async(name: str, file_id: str) -> str:
     """Асинхронно создать Vector Store с файлом"""
     print(f"Создаем Vector Store '{name}'...")
     
-    loop = asyncio.get_event_loop()
+    # Используем нативный асинхронный клиент
+    vector_store = await async_client.vector_stores.create(
+        name=name,
+        file_ids=[file_id],
+        expires_after={"anchor": "last_active_at", "days": 1}
+    )
     
-    # Создание Vector Store
-    def _create():
-        return client.vector_stores.create(
-            name=name,
-            file_ids=[file_id],
-            expires_after={"anchor": "last_active_at", "days": 1}
-        )
-    
-    vector_store = await loop.run_in_executor(None, _create)
     store_id = vector_store.id
     print(f"Vector Store создан с ID: {store_id}")
     
@@ -131,10 +129,7 @@ async def create_vector_store_async(name: str, file_id: str) -> str:
     attempt = 0
     
     while attempt < max_attempts:
-        def _retrieve():
-            return client.vector_stores.retrieve(store_id)
-        
-        store = await loop.run_in_executor(None, _retrieve)
+        store = await async_client.vector_stores.retrieve(store_id)
         status = store.status
         
         if status == "completed":
