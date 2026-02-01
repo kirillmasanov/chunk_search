@@ -4,15 +4,13 @@ AI Search Demo - Минимальный backend
 """
 
 import os
-import time
 import json
 import pathlib
 import asyncio
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from openai import OpenAI, AsyncOpenAI
 from dotenv import load_dotenv
@@ -58,16 +56,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Хранилище для Vector Store ID и File ID
+# Хранилище для Vector Store ID
 vector_stores = {
     "auto": None,  # Для автоматического чанкования
     "chunks": None  # Для пользовательских чанков
-}
-
-# Хранилище для File ID
-uploaded_files = {
-    "auto": None,
-    "chunks": None
 }
 
 # Pydantic модели
@@ -244,7 +236,6 @@ async def initialize_stores():
             async def create_auto_store():
                 print("Режим A: Автоматическое чанкование")
                 file_id = await upload_file_async("faq.txt", "text/plain")
-                uploaded_files["auto"] = file_id
                 store_id = await create_vector_store_async("FAQ Auto Chunking", file_id)
                 vector_stores["auto"] = store_id
                 print(f"✓ Режим A готов: {store_id}")
@@ -263,7 +254,6 @@ async def initialize_stores():
                     "application/jsonlines",
                     extra_body={"format": "chunks"}
                 )
-                uploaded_files["chunks"] = file_id
                 store_id = await create_vector_store_async("FAQ Custom Chunks", file_id)
                 vector_stores["chunks"] = store_id
                 print(f"✓ Режим B готов: {store_id}")
@@ -385,8 +375,6 @@ async def reset_stores():
             except Exception as e:
                 print(f"Ошибка при удалении файла {file_id}: {e}")
         
-        uploaded_files["auto"] = None
-        
         # Удалить индекс с чанками
         if vector_stores["chunks"]:
             try:
@@ -405,8 +393,6 @@ async def reset_stores():
                 print(f"Удален файл: {file_id}")
             except Exception as e:
                 print(f"Ошибка при удалении файла {file_id}: {e}")
-        
-        uploaded_files["chunks"] = None
         
         print(f"Удалено файлов: auto={len(files_to_delete['auto'])}, chunks={len(files_to_delete['chunks'])}")
         print("="*50 + "\n")
