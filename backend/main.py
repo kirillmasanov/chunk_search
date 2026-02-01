@@ -7,6 +7,7 @@ import os
 import time
 import json
 import pathlib
+import asyncio
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -80,8 +81,8 @@ def get_data_path(filename: str) -> pathlib.Path:
     return pathlib.Path(__file__).parent.parent / "data" / filename
 
 
-def upload_file(filename: str, content_type: str, extra_body: Optional[dict] = None) -> str:
-    """Загрузить файл в Yandex Cloud AI Studio"""
+async def upload_file_async(filename: str, content_type: str, extra_body: Optional[dict] = None) -> str:
+    """Асинхронно загрузить файл в Yandex Cloud AI Studio"""
     file_path = get_data_path(filename)
     
     if not file_path.exists():
@@ -89,50 +90,63 @@ def upload_file(filename: str, content_type: str, extra_body: Optional[dict] = N
     
     print(f"Загружаем файл {filename}...")
     
-    with open(file_path, "rb") as f:
-        file_response = client.files.create(
-            file=(filename, f, content_type),
-            purpose="assistants",
-            extra_body=extra_body
-        )
+    # Выполняем синхронную операцию в отдельном потоке
+    loop = asyncio.get_event_loop()
     
-    print(f"Файл {filename} загружен с ID: {file_response.id}")
-    return file_response.id
+    def _upload():
+        with open(file_path, "rb") as f:
+            file_response = client.files.create(
+                file=(filename, f, content_type),
+                purpose="assistants",
+                extra_body=extra_body
+            )
+        return file_response.id
+    
+    file_id = await loop.run_in_executor(None, _upload)
+    print(f"Файл {filename} загружен с ID: {file_id}")
+    return file_id
 
 
-def create_vector_store(name: str, file_id: str) -> str:
-    """Создать Vector Store с файлом"""
+async def create_vector_store_async(name: str, file_id: str) -> str:
+    """Асинхронно создать Vector Store с файлом"""
     print(f"Создаем Vector Store '{name}'...")
     
-    vector_store = client.vector_stores.create(
-        name=name,
-        file_ids=[file_id],
-        expires_after={"anchor": "last_active_at", "days": 1}
-    )
+    loop = asyncio.get_event_loop()
     
+    # Создание Vector Store
+    def _create():
+        return client.vector_stores.create(
+            name=name,
+            file_ids=[file_id],
+            expires_after={"anchor": "last_active_at", "days": 1}
+        )
+    
+    vector_store = await loop.run_in_executor(None, _create)
     store_id = vector_store.id
     print(f"Vector Store создан с ID: {store_id}")
     
     # Ожидание готовности индекса
-    print("Ожидаем готовности индекса...")
+    print(f"Ожидаем готовности индекса {name}...")
     max_attempts = 60  # 2 минуты максимум
     attempt = 0
     
     while attempt < max_attempts:
-        store = client.vector_stores.retrieve(store_id)
+        def _retrieve():
+            return client.vector_stores.retrieve(store_id)
+        
+        store = await loop.run_in_executor(None, _retrieve)
         status = store.status
-        print(f"Статус: {status}")
         
         if status == "completed":
-            print("Vector Store готов!")
+            print(f"Vector Store '{name}' готов!")
             return store_id
         elif status == "failed":
-            raise Exception("Ошибка при создании индекса")
+            raise Exception(f"Ошибка при создании индекса '{name}'")
         
-        time.sleep(2)
+        await asyncio.sleep(2)
         attempt += 1
     
-    raise TimeoutError("Превышено время ожидания готовности индекса")
+    raise TimeoutError(f"Превышено время ожидания готовности индекса '{name}'")
 
 
 def search_in_store(query: str, store_id: str) -> dict:
@@ -216,9 +230,9 @@ def search_in_store(query: str, store_id: str) -> dict:
 
 @app.post("/api/initialize")
 async def initialize_stores():
-    """Инициализация Vector Stores - создание индексов"""
+    """Инициализация Vector Stores - создание индексов (асинхронно)"""
     print("\n" + "="*50)
-    print("Инициализация AI Search Demo")
+    print("Инициализация AI Search Demo (асинхронно)")
     print("="*50 + "\n")
     
     try:
@@ -227,35 +241,56 @@ async def initialize_stores():
             "chunks": {"status": "skipped", "store_id": None}
         }
         
+        # Создаем задачи для параллельного выполнения
+        tasks = []
+        
         # Режим A: Автоматическое чанкование
         if not vector_stores["auto"]:
-            print("Режим A: Автоматическое чанкование")
-            print("-" * 50)
-            file_id_auto = upload_file("faq.txt", "text/plain")
-            uploaded_files["auto"] = file_id_auto
-            vector_stores["auto"] = create_vector_store("FAQ Auto Chunking", file_id_auto)
-            print(f"✓ Режим A готов: {vector_stores['auto']}\n")
-            results["auto"] = {"status": "created", "store_id": vector_stores["auto"]}
+            async def create_auto_store():
+                print("Режим A: Автоматическое чанкование")
+                file_id = await upload_file_async("faq.txt", "text/plain")
+                uploaded_files["auto"] = file_id
+                store_id = await create_vector_store_async("FAQ Auto Chunking", file_id)
+                vector_stores["auto"] = store_id
+                print(f"✓ Режим A готов: {store_id}")
+                return {"status": "created", "store_id": store_id}
+            
+            tasks.append(("auto", create_auto_store()))
         else:
             results["auto"] = {"status": "already_exists", "store_id": vector_stores["auto"]}
         
         # Режим B: Пользовательские чанки
         if not vector_stores["chunks"]:
-            print("Режим B: Пользовательские чанки")
-            print("-" * 50)
-            file_id_chunks = upload_file(
-                "faq_chunks.jsonl",
-                "application/jsonlines",
-                extra_body={"format": "chunks"}
-            )
-            uploaded_files["chunks"] = file_id_chunks
-            vector_stores["chunks"] = create_vector_store("FAQ Custom Chunks", file_id_chunks)
-            print(f"✓ Режим B готов: {vector_stores['chunks']}\n")
-            results["chunks"] = {"status": "created", "store_id": vector_stores["chunks"]}
+            async def create_chunks_store():
+                print("Режим B: Пользовательские чанки")
+                file_id = await upload_file_async(
+                    "faq_chunks.jsonl",
+                    "application/jsonlines",
+                    extra_body={"format": "chunks"}
+                )
+                uploaded_files["chunks"] = file_id
+                store_id = await create_vector_store_async("FAQ Custom Chunks", file_id)
+                vector_stores["chunks"] = store_id
+                print(f"✓ Режим B готов: {store_id}")
+                return {"status": "created", "store_id": store_id}
+            
+            tasks.append(("chunks", create_chunks_store()))
         else:
             results["chunks"] = {"status": "already_exists", "store_id": vector_stores["chunks"]}
         
-        print("="*50)
+        # Выполняем задачи параллельно
+        if tasks:
+            print(f"\nЗапускаем {len(tasks)} задач параллельно...")
+            task_results = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
+            
+            # Обрабатываем результаты
+            for (mode, _), result in zip(tasks, task_results):
+                if isinstance(result, Exception):
+                    print(f"✗ Ошибка в режиме {mode}: {result}")
+                    raise result
+                results[mode] = result
+        
+        print("\n" + "="*50)
         print("✓ Инициализация завершена успешно!")
         print("="*50 + "\n")
         
