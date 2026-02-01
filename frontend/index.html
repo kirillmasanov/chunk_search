@@ -493,7 +493,7 @@
                 <div class="mode-card" data-mode="chunks" onclick="selectMode('chunks')">
                     <div class="mode-badge mode-b">Режим B</div>
                     <h3>Пользовательские чанки</h3>
-                    <p>Документ предварительно разбит на логические блоки (Q&A пары)</p>
+                    <p>Предварительно подготовленные фрагменты информации в формате JSONL</p>
                 </div>
             </div>
         </div>
@@ -739,10 +739,14 @@
                     chunkDiv.className = 'chunk';
                     
                     const score = (chunk.score * 100).toFixed(1);
+                    const filename = chunk.filename || 'Неизвестный источник';
                     
                     chunkDiv.innerHTML = `
                         <div class="chunk-header">
-                            <strong>Фрагмент ${index + 1}</strong>
+                            <div>
+                                <strong>Фрагмент ${index + 1}</strong>
+                                <span style="color: #6c7380; font-size: 12px; margin-left: 8px;">📄 ${escapeHtml(filename)}</span>
+                            </div>
                             <span class="chunk-score">${score}%</span>
                         </div>
                         <div class="chunk-text">${escapeHtml(chunk.text)}</div>
