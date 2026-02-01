@@ -50,10 +50,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Хранилище для Vector Store ID
+# Хранилище для Vector Store ID и File ID
 vector_stores = {
     "auto": None,  # Для автоматического чанкования
     "chunks": None  # Для пользовательских чанков
+}
+
+# Хранилище для File ID
+uploaded_files = {
+    "auto": None,
+    "chunks": None
 }
 
 # Pydantic модели
@@ -226,6 +232,7 @@ async def initialize_stores():
             print("Режим A: Автоматическое чанкование")
             print("-" * 50)
             file_id_auto = upload_file("faq.txt", "text/plain")
+            uploaded_files["auto"] = file_id_auto
             vector_stores["auto"] = create_vector_store("FAQ Auto Chunking", file_id_auto)
             print(f"✓ Режим A готов: {vector_stores['auto']}\n")
             results["auto"] = {"status": "created", "store_id": vector_stores["auto"]}
@@ -241,6 +248,7 @@ async def initialize_stores():
                 "application/jsonlines",
                 extra_body={"format": "chunks"}
             )
+            uploaded_files["chunks"] = file_id_chunks
             vector_stores["chunks"] = create_vector_store("FAQ Custom Chunks", file_id_chunks)
             print(f"✓ Режим B готов: {vector_stores['chunks']}\n")
             results["chunks"] = {"status": "created", "store_id": vector_stores["chunks"]}
@@ -294,33 +302,56 @@ async def get_stores():
 
 @app.post("/api/reset")
 async def reset_stores():
-    """Сбросить Vector Stores (удалить индексы)"""
+    """Сбросить Vector Stores и удалить загруженные файлы"""
     try:
-        deleted = {"auto": False, "chunks": False}
+        deleted = {
+            "stores": {"auto": False, "chunks": False},
+            "files": {"auto": False, "chunks": False}
+        }
         
         # Удалить автоматический индекс
         if vector_stores["auto"]:
             try:
                 client.vector_stores.delete(vector_stores["auto"])
-                deleted["auto"] = True
+                deleted["stores"]["auto"] = True
                 print(f"Удален Vector Store: {vector_stores['auto']}")
             except Exception as e:
                 print(f"Ошибка при удалении auto store: {e}")
             vector_stores["auto"] = None
         
+        # Удалить файл для автоматического режима
+        if uploaded_files["auto"]:
+            try:
+                client.files.delete(uploaded_files["auto"])
+                deleted["files"]["auto"] = True
+                print(f"Удален файл: {uploaded_files['auto']}")
+            except Exception as e:
+                print(f"Ошибка при удалении auto file: {e}")
+            uploaded_files["auto"] = None
+        
         # Удалить индекс с чанками
         if vector_stores["chunks"]:
             try:
                 client.vector_stores.delete(vector_stores["chunks"])
-                deleted["chunks"] = True
+                deleted["stores"]["chunks"] = True
                 print(f"Удален Vector Store: {vector_stores['chunks']}")
             except Exception as e:
                 print(f"Ошибка при удалении chunks store: {e}")
             vector_stores["chunks"] = None
         
+        # Удалить файл для режима с чанками
+        if uploaded_files["chunks"]:
+            try:
+                client.files.delete(uploaded_files["chunks"])
+                deleted["files"]["chunks"] = True
+                print(f"Удален файл: {uploaded_files['chunks']}")
+            except Exception as e:
+                print(f"Ошибка при удалении chunks file: {e}")
+            uploaded_files["chunks"] = None
+        
         return {
             "success": True,
-            "message": "Индексы удалены",
+            "message": "Индексы и файлы удалены",
             "deleted": deleted
         }
     except Exception as e:

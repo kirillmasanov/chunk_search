@@ -474,10 +474,10 @@
         <div class="card hidden" id="resetSection">
             <div class="card-title">Управление индексами</div>
             <p style="color: #6c7380; margin-bottom: 16px; font-size: 14px;">
-                Удалить созданные индексы и начать заново
+                Удалить созданные индексы и загруженные файлы
             </p>
             <button class="btn btn-danger" onclick="resetStores()" id="resetBtn">
-                Удалить индексы
+                Удалить индексы и файлы
             </button>
         </div>
 
@@ -645,14 +645,14 @@
                 initBtn.disabled = false;
                 initBtn.textContent = 'Загрузить данные и создать индексы';
                 
-                showSuccess('Индексы успешно удалены!', 'Теперь можно создать их заново');
+                showSuccess('Индексы и файлы успешно удалены!', 'Теперь можно создать их заново');
 
             } catch (error) {
                 showError('Ошибка при сбросе: ' + error.message);
             } finally {
                 loading.classList.add('hidden');
                 resetBtn.disabled = false;
-                resetBtn.textContent = 'Удалить индексы';
+                resetBtn.textContent = 'Удалить индексы и файлы';
             }
         }
 
