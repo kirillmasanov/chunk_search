@@ -66,6 +66,7 @@ class SearchResponse(BaseModel):
     chunks: list
     mode: str
     store_id: str
+    raw_response: dict
 
 
 def get_data_path(filename: str) -> pathlib.Path:
@@ -161,7 +162,10 @@ def search_in_store(query: str, store_id: str) -> dict:
         )
         
         print(f"Response received")
-        print(json.dumps(response.model_dump(), indent=2, ensure_ascii=False))
+        
+        # Сохраняем сырой ответ
+        raw_response = response.model_dump()
+        print(json.dumps(raw_response, indent=2, ensure_ascii=False))
         
         # Извлекаем ответ и чанки из структуры response
         answer = ""
@@ -194,7 +198,8 @@ def search_in_store(query: str, store_id: str) -> dict:
         
         return {
             "answer": answer,
-            "chunks": chunks
+            "chunks": chunks,
+            "raw_response": raw_response
         }
     except Exception as e:
         print(f"Ошибка при поиске: {e}")
@@ -341,7 +346,8 @@ async def search(request: SearchRequest):
             answer=result["answer"],
             chunks=result["chunks"],
             mode=request.mode,
-            store_id=store_id
+            store_id=store_id,
+            raw_response=result["raw_response"]
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка при поиске: {str(e)}")

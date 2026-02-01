@@ -545,7 +545,7 @@
 
                 <div class="chunks-section">
                     <div class="section-toggle" onclick="toggleRawJson()">
-                        <h3>Сырой JSON ответ</h3>
+                        <h3>Полный ответ (JSON)</h3>
                         <span class="arrow" id="jsonArrow">▼</span>
                     </div>
                     <div class="section-content" id="rawJsonContainer">
@@ -754,7 +754,9 @@
                 chunksList.innerHTML = '<p style="color: #6c7380; padding: 20px; text-align: center;">Фрагменты не найдены</p>';
             }
 
-            document.getElementById('rawJsonText').innerHTML = syntaxHighlight(data);
+            // Отображаем raw_response вместо всего объекта data
+            const rawResponse = data.raw_response || data;
+            document.getElementById('rawJsonText').innerHTML = syntaxHighlight(rawResponse);
             document.getElementById('results').classList.add('show');
         }
 
