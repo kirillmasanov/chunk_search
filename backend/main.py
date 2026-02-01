@@ -324,6 +324,34 @@ async def get_stores():
     }
 
 
+@app.get("/api/data/{mode}")
+async def get_data_file(mode: str):
+    """Получить содержимое файла данных для указанного режима"""
+    if mode not in ["auto", "chunks"]:
+        raise HTTPException(status_code=400, detail="mode должен быть 'auto' или 'chunks'")
+    
+    try:
+        if mode == "auto":
+            file_path = get_data_path(AUTO_MODE_FILE)
+        else:
+            file_path = get_data_path(CHUNKS_MODE_FILE)
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail=f"Файл не найден: {file_path.name}")
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        return {
+            "mode": mode,
+            "filename": file_path.name,
+            "content": content,
+            "size": len(content)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при чтении файла: {str(e)}")
+
+
 @app.post("/api/reset")
 async def reset_stores():
     """Сбросить Vector Stores и удалить загруженные файлы"""
