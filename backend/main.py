@@ -23,6 +23,10 @@ YANDEX_API_KEY = os.getenv("YANDEX_API_KEY")
 YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID")
 YANDEX_CLOUD_MODEL = os.getenv("YANDEX_CLOUD_MODEL", "qwen3-235b-a22b-fp8/latest")
 
+# Файлы данных для каждого режима
+AUTO_MODE_FILE = "faq.txt"  # Файл для автоматического чанкования
+CHUNKS_MODE_FILE = "faq_chunks.jsonl"  # Файл с готовыми чанками
+
 if not YANDEX_API_KEY or not YANDEX_FOLDER_ID:
     raise ValueError("YANDEX_API_KEY и YANDEX_FOLDER_ID должны быть установлены в .env файле")
 
@@ -235,7 +239,7 @@ async def initialize_stores():
         if not vector_stores["auto"]:
             async def create_auto_store():
                 print("Режим A: Автоматическое чанкование")
-                file_id = await upload_file_async("faq.txt", "text/plain")
+                file_id = await upload_file_async(AUTO_MODE_FILE, "text/plain")
                 store_id = await create_vector_store_async("FAQ Auto Chunking", file_id)
                 vector_stores["auto"] = store_id
                 print(f"✓ Режим A готов: {store_id}")
@@ -250,7 +254,7 @@ async def initialize_stores():
             async def create_chunks_store():
                 print("Режим B: Пользовательские чанки")
                 file_id = await upload_file_async(
-                    "faq_chunks.jsonl",
+                    CHUNKS_MODE_FILE,
                     "application/jsonlines",
                     extra_body={"format": "chunks"}
                 )
