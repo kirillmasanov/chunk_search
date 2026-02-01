@@ -1,0 +1,352 @@
+"""
+AI Search Demo - Минимальный backend
+Демонстрация разницы между автоматическим и пользовательским чанкованием
+"""
+
+import os
+import time
+import json
+import pathlib
+from typing import Optional
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения
+load_dotenv()
+
+# Конфигурация
+YANDEX_API_KEY = os.getenv("YANDEX_API_KEY")
+YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID")
+YANDEX_CLOUD_MODEL = os.getenv("YANDEX_CLOUD_MODEL", "qwen3-235b-a22b-fp8/latest")
+
+if not YANDEX_API_KEY or not YANDEX_FOLDER_ID:
+    raise ValueError("YANDEX_API_KEY и YANDEX_FOLDER_ID должны быть установлены в .env файле")
+
+# Инициализация OpenAI клиента для Yandex Cloud
+client = OpenAI(
+    api_key=YANDEX_API_KEY,
+    base_url="https://rest-assistant.api.cloud.yandex.net/v1",
+    project=YANDEX_FOLDER_ID
+)
+
+# FastAPI приложение
+app = FastAPI(
+    title="AI Search Demo",
+    description="Демонстрация пользовательских чанков в Yandex Cloud AI Studio",
+    version="1.0.0"
+)
+
+# CORS для локальной разработки
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Хранилище для Vector Store ID
+vector_stores = {
+    "auto": None,  # Для автоматического чанкования
+    "chunks": None  # Для пользовательских чанков
+}
+
+# Pydantic модели
+class SearchRequest(BaseModel):
+    query: str
+    mode: str  # "auto" или "chunks"
+
+class SearchResponse(BaseModel):
+    answer: str
+    chunks: list
+    mode: str
+    store_id: str
+
+
+def get_data_path(filename: str) -> pathlib.Path:
+    """Получить путь к файлу данных"""
+    return pathlib.Path(__file__).parent.parent / "data" / filename
+
+
+def upload_file(filename: str, content_type: str, extra_body: Optional[dict] = None) -> str:
+    """Загрузить файл в Yandex Cloud AI Studio"""
+    file_path = get_data_path(filename)
+    
+    if not file_path.exists():
+        raise FileNotFoundError(f"Файл {filename} не найден в директории data/")
+    
+    print(f"Загружаем файл {filename}...")
+    
+    with open(file_path, "rb") as f:
+        file_response = client.files.create(
+            file=(filename, f, content_type),
+            purpose="assistants",
+            extra_body=extra_body
+        )
+    
+    print(f"Файл {filename} загружен с ID: {file_response.id}")
+    return file_response.id
+
+
+def create_vector_store(name: str, file_id: str) -> str:
+    """Создать Vector Store с файлом"""
+    print(f"Создаем Vector Store '{name}'...")
+    
+    vector_store = client.vector_stores.create(
+        name=name,
+        file_ids=[file_id],
+        expires_after={"anchor": "last_active_at", "days": 1}
+    )
+    
+    store_id = vector_store.id
+    print(f"Vector Store создан с ID: {store_id}")
+    
+    # Ожидание готовности индекса
+    print("Ожидаем готовности индекса...")
+    max_attempts = 60  # 2 минуты максимум
+    attempt = 0
+    
+    while attempt < max_attempts:
+        store = client.vector_stores.retrieve(store_id)
+        status = store.status
+        print(f"Статус: {status}")
+        
+        if status == "completed":
+            print("Vector Store готов!")
+            return store_id
+        elif status == "failed":
+            raise Exception("Ошибка при создании индекса")
+        
+        time.sleep(2)
+        attempt += 1
+    
+    raise TimeoutError("Превышено время ожидания готовности индекса")
+
+
+def search_in_store(query: str, store_id: str) -> dict:
+    """Выполнить поиск в Vector Store"""
+    print(f"Выполняем поиск: '{query}' в store {store_id}")
+    
+    model_uri = f"gpt://{YANDEX_FOLDER_ID}/{YANDEX_CLOUD_MODEL}"
+    print(f"Model URI: {model_uri}")
+    
+    try:
+        response = client.responses.create(
+            model=model_uri,
+            instructions="""Ты — умный ассистент для работы с базой знаний.
+
+ВАЖНО: Отвечай ТОЛЬКО на основе информации из подключенного поискового индекса.
+
+Правила:
+1. Используй ТОЛЬКО информацию из найденных фрагментов документов
+2. Если информации нет в индексе - четко скажи: "В базе знаний нет информации по этому вопросу"
+3. НЕ придумывай информацию и НЕ используй общие знания
+4. Давай точные ответы на основе найденных фрагментов
+5. Если ответ неполный - укажи это
+
+Формат ответа:
+- Краткий и точный ответ на вопрос
+- Основан только на данных из индекса""",
+            tools=[{
+                "type": "file_search",
+                "vector_store_ids": [store_id],
+                "max_num_results": 3
+            }],
+            input=query
+        )
+        
+        print(f"Response received")
+        print(json.dumps(response.model_dump(), indent=2, ensure_ascii=False))
+        
+        # Извлекаем ответ и чанки из структуры response
+        answer = ""
+        chunks = []
+        
+        if hasattr(response, 'output') and response.output:
+            for item in response.output:
+                # Извлекаем результаты поиска
+                if hasattr(item, 'type') and item.type == "file_search_call":
+                    if hasattr(item, 'results') and item.results:
+                        for result in item.results:
+                            chunks.append({
+                                "text": result.text if hasattr(result, 'text') else "",
+                                "score": result.score if hasattr(result, 'score') else 0.0,
+                                "file_id": result.file_id if hasattr(result, 'file_id') else "",
+                                "filename": result.filename if hasattr(result, 'filename') else ""
+                            })
+                
+                # Извлекаем текст ответа из message
+                elif hasattr(item, 'type') and item.type == "message":
+                    if hasattr(item, 'content') and item.content:
+                        for content_item in item.content:
+                            if hasattr(content_item, 'type') and content_item.type == "output_text":
+                                if hasattr(content_item, 'text'):
+                                    answer = content_item.text
+                                    break
+        
+        print(f"Extracted answer: {answer}")
+        print(f"Found {len(chunks)} chunks")
+        
+        return {
+            "answer": answer,
+            "chunks": chunks
+        }
+    except Exception as e:
+        print(f"Ошибка при поиске: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+
+@app.post("/api/initialize")
+async def initialize_stores():
+    """Инициализация Vector Stores - создание индексов"""
+    print("\n" + "="*50)
+    print("Инициализация AI Search Demo")
+    print("="*50 + "\n")
+    
+    try:
+        results = {
+            "auto": {"status": "skipped", "store_id": None},
+            "chunks": {"status": "skipped", "store_id": None}
+        }
+        
+        # Режим A: Автоматическое чанкование
+        if not vector_stores["auto"]:
+            print("Режим A: Автоматическое чанкование")
+            print("-" * 50)
+            file_id_auto = upload_file("faq.txt", "text/plain")
+            vector_stores["auto"] = create_vector_store("FAQ Auto Chunking", file_id_auto)
+            print(f"✓ Режим A готов: {vector_stores['auto']}\n")
+            results["auto"] = {"status": "created", "store_id": vector_stores["auto"]}
+        else:
+            results["auto"] = {"status": "already_exists", "store_id": vector_stores["auto"]}
+        
+        # Режим B: Пользовательские чанки
+        if not vector_stores["chunks"]:
+            print("Режим B: Пользовательские чанки")
+            print("-" * 50)
+            file_id_chunks = upload_file(
+                "faq_chunks.jsonl",
+                "application/jsonlines",
+                extra_body={"format": "chunks"}
+            )
+            vector_stores["chunks"] = create_vector_store("FAQ Custom Chunks", file_id_chunks)
+            print(f"✓ Режим B готов: {vector_stores['chunks']}\n")
+            results["chunks"] = {"status": "created", "store_id": vector_stores["chunks"]}
+        else:
+            results["chunks"] = {"status": "already_exists", "store_id": vector_stores["chunks"]}
+        
+        print("="*50)
+        print("✓ Инициализация завершена успешно!")
+        print("="*50 + "\n")
+        
+        return {
+            "success": True,
+            "message": "Индексы успешно созданы",
+            "stores": results
+        }
+        
+    except Exception as e:
+        print(f"\n✗ Ошибка при инициализации: {e}\n")
+        raise HTTPException(status_code=500, detail=f"Ошибка при инициализации: {str(e)}")
+
+
+@app.get("/")
+async def root():
+    """Главная страница - отдаем frontend"""
+    frontend_path = pathlib.Path(__file__).parent.parent / "frontend" / "index.html"
+    if frontend_path.exists():
+        return FileResponse(frontend_path)
+    return {"message": "AI Search Demo API", "docs": "/docs"}
+
+
+@app.get("/api/health")
+async def health_check():
+    """Проверка работоспособности"""
+    return {
+        "status": "healthy",
+        "vector_stores": {
+            "auto": vector_stores["auto"] is not None,
+            "chunks": vector_stores["chunks"] is not None
+        }
+    }
+
+
+@app.get("/api/stores")
+async def get_stores():
+    """Получить ID Vector Stores"""
+    return {
+        "auto": vector_stores["auto"],
+        "chunks": vector_stores["chunks"]
+    }
+
+
+@app.post("/api/reset")
+async def reset_stores():
+    """Сбросить Vector Stores (удалить индексы)"""
+    try:
+        deleted = {"auto": False, "chunks": False}
+        
+        # Удалить автоматический индекс
+        if vector_stores["auto"]:
+            try:
+                client.vector_stores.delete(vector_stores["auto"])
+                deleted["auto"] = True
+                print(f"Удален Vector Store: {vector_stores['auto']}")
+            except Exception as e:
+                print(f"Ошибка при удалении auto store: {e}")
+            vector_stores["auto"] = None
+        
+        # Удалить индекс с чанками
+        if vector_stores["chunks"]:
+            try:
+                client.vector_stores.delete(vector_stores["chunks"])
+                deleted["chunks"] = True
+                print(f"Удален Vector Store: {vector_stores['chunks']}")
+            except Exception as e:
+                print(f"Ошибка при удалении chunks store: {e}")
+            vector_stores["chunks"] = None
+        
+        return {
+            "success": True,
+            "message": "Индексы удалены",
+            "deleted": deleted
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при сбросе: {str(e)}")
+
+
+@app.post("/api/search", response_model=SearchResponse)
+async def search(request: SearchRequest):
+    """Выполнить поиск"""
+    if request.mode not in ["auto", "chunks"]:
+        raise HTTPException(status_code=400, detail="mode должен быть 'auto' или 'chunks'")
+    
+    store_id = vector_stores[request.mode]
+    if not store_id:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Vector Store для режима '{request.mode}' еще не готов"
+        )
+    
+    try:
+        result = search_in_store(request.query, store_id)
+        return SearchResponse(
+            answer=result["answer"],
+            chunks=result["chunks"],
+            mode=request.mode,
+            store_id=store_id
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при поиске: {str(e)}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
