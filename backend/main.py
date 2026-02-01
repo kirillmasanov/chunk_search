@@ -304,10 +304,37 @@ async def get_stores():
 async def reset_stores():
     """Сбросить Vector Stores и удалить загруженные файлы"""
     try:
+        print("\n" + "="*50)
+        print("Удаление индексов и файлов")
+        print("="*50)
+        
         deleted = {
             "stores": {"auto": False, "chunks": False},
             "files": {"auto": False, "chunks": False}
         }
+        
+        # Получить список файлов из Vector Stores перед удалением
+        files_to_delete = {"auto": [], "chunks": []}
+        
+        # Получить файлы из автоматического индекса
+        if vector_stores["auto"]:
+            try:
+                files_list = client.vector_stores.files.list(vector_stores["auto"])
+                if hasattr(files_list, 'data'):
+                    for file_obj in files_list.data:
+                        files_to_delete["auto"].append(file_obj.id)
+            except Exception as e:
+                print(f"Ошибка при получении файлов auto store: {e}")
+        
+        # Получить файлы из индекса с чанками
+        if vector_stores["chunks"]:
+            try:
+                files_list = client.vector_stores.files.list(vector_stores["chunks"])
+                if hasattr(files_list, 'data'):
+                    for file_obj in files_list.data:
+                        files_to_delete["chunks"].append(file_obj.id)
+            except Exception as e:
+                print(f"Ошибка при получении файлов chunks store: {e}")
         
         # Удалить автоматический индекс
         if vector_stores["auto"]:
@@ -319,15 +346,16 @@ async def reset_stores():
                 print(f"Ошибка при удалении auto store: {e}")
             vector_stores["auto"] = None
         
-        # Удалить файл для автоматического режима
-        if uploaded_files["auto"]:
+        # Удалить файлы для автоматического режима
+        for file_id in files_to_delete["auto"]:
             try:
-                client.files.delete(uploaded_files["auto"])
+                client.files.delete(file_id)
                 deleted["files"]["auto"] = True
-                print(f"Удален файл: {uploaded_files['auto']}")
+                print(f"Удален файл: {file_id}")
             except Exception as e:
-                print(f"Ошибка при удалении auto file: {e}")
-            uploaded_files["auto"] = None
+                print(f"Ошибка при удалении файла {file_id}: {e}")
+        
+        uploaded_files["auto"] = None
         
         # Удалить индекс с чанками
         if vector_stores["chunks"]:
@@ -339,22 +367,31 @@ async def reset_stores():
                 print(f"Ошибка при удалении chunks store: {e}")
             vector_stores["chunks"] = None
         
-        # Удалить файл для режима с чанками
-        if uploaded_files["chunks"]:
+        # Удалить файлы для режима с чанками
+        for file_id in files_to_delete["chunks"]:
             try:
-                client.files.delete(uploaded_files["chunks"])
+                client.files.delete(file_id)
                 deleted["files"]["chunks"] = True
-                print(f"Удален файл: {uploaded_files['chunks']}")
+                print(f"Удален файл: {file_id}")
             except Exception as e:
-                print(f"Ошибка при удалении chunks file: {e}")
-            uploaded_files["chunks"] = None
+                print(f"Ошибка при удалении файла {file_id}: {e}")
+        
+        uploaded_files["chunks"] = None
+        
+        print(f"Удалено файлов: auto={len(files_to_delete['auto'])}, chunks={len(files_to_delete['chunks'])}")
+        print("="*50 + "\n")
         
         return {
             "success": True,
             "message": "Индексы и файлы удалены",
-            "deleted": deleted
+            "deleted": deleted,
+            "files_deleted_count": {
+                "auto": len(files_to_delete["auto"]),
+                "chunks": len(files_to_delete["chunks"])
+            }
         }
     except Exception as e:
+        print(f"Ошибка при сбросе: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка при сбросе: {str(e)}")
 
 
