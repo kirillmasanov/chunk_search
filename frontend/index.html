@@ -271,9 +271,16 @@
             margin-bottom: 24px;
         }
 
+        .answer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
         .answer-box h3 {
             color: #0958d9;
-            margin-bottom: 12px;
+            margin: 0;
             font-size: 16px;
             font-weight: 600;
         }
@@ -282,6 +289,14 @@
             line-height: 1.6;
             color: #1f2229;
             font-size: 15px;
+        }
+
+        .tokens-badge {
+            color: #6c7380;
+            font-size: 13px;
+            font-weight: 400;
+            display: flex;
+            align-items: center;
         }
 
         .info-badge {
@@ -595,7 +610,7 @@
                     <h3>Автоматическое чанкование</h3>
                     <p>Платформа автоматически разбивает документ на фрагменты</p>
                     <button class="view-data-btn" onclick="event.stopPropagation(); viewDataFile('auto')">
-                        📄 Посмотреть исходный файл
+                        Посмотреть исходный файл
                     </button>
                 </div>
                 <div class="mode-card" data-mode="chunks" onclick="selectMode('chunks')">
@@ -603,7 +618,7 @@
                     <h3>Пользовательские чанки</h3>
                     <p>Предварительно подготовленные фрагменты информации в формате JSONL</p>
                     <button class="view-data-btn" onclick="event.stopPropagation(); viewDataFile('chunks')">
-                        📄 Посмотреть исходный файл
+                        Посмотреть исходный файл
                     </button>
                 </div>
             </div>
@@ -642,7 +657,12 @@
             <div class="card">
                 <div class="answer-box">
                     <div class="info-badge" id="modeInfo"></div>
-                    <h3>Ответ</h3>
+                    <div class="answer-header">
+                        <h3>Ответ</h3>
+                        <div class="tokens-badge" id="tokensBadge" style="display: none;">
+                            <span id="tokensCount">0</span>&nbsp;токенов
+                        </div>
+                    </div>
                     <p id="answerText"></p>
                 </div>
 
@@ -848,11 +868,22 @@
         // Display results
         function displayResults(data) {
             const modeInfo = document.getElementById('modeInfo');
-            modeInfo.textContent = currentMode === 'auto' 
-                ? 'Режим A: Автоматическое чанкование' 
+            modeInfo.textContent = currentMode === 'auto'
+                ? 'Режим A: Автоматическое чанкование'
                 : 'Режим B: Пользовательские чанки';
 
             document.getElementById('answerText').textContent = data.answer || 'Ответ не получен';
+
+            // Отображаем количество токенов, если доступно
+            const tokensBadge = document.getElementById('tokensBadge');
+            const tokensCount = document.getElementById('tokensCount');
+            
+            if (data.raw_response && data.raw_response.usage && data.raw_response.usage.total_tokens) {
+                tokensCount.textContent = data.raw_response.usage.total_tokens.toLocaleString('ru-RU');
+                tokensBadge.style.display = 'flex';
+            } else {
+                tokensBadge.style.display = 'none';
+            }
 
             const chunksList = document.getElementById('chunksList');
             chunksList.innerHTML = '';

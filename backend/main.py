@@ -176,7 +176,7 @@ def search_in_store(query: str, store_id: str) -> dict:
         
         # Сохраняем сырой ответ
         raw_response = response.model_dump()
-        print(json.dumps(raw_response, indent=2, ensure_ascii=False))
+        # print(json.dumps(raw_response, indent=2, ensure_ascii=False))
         
         # Извлекаем ответ и чанки из структуры response
         answer = ""
