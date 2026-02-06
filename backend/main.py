@@ -105,16 +105,39 @@ async def upload_file_async(filename: str, content_type: str, extra_body: Option
     return file_response.id
 
 
-async def create_vector_store_async(name: str, file_id: str) -> str:
-    """Асинхронно создать Vector Store с файлом"""
+async def create_vector_store_async(name: str, file_id: str, use_auto_chunking: bool = True) -> str:
+    """Асинхронно создать Vector Store с файлом
+    
+    Args:
+        name: Название Vector Store
+        file_id: ID загруженного файла
+        use_auto_chunking: Использовать автоматическое чанкование (True) или пользовательские чанки (False)
+    """
     print(f"Создаем Vector Store '{name}'...")
     
+    # Параметры для создания Vector Store
+    create_params = {
+        "name": name,
+        "file_ids": [file_id],
+        "expires_after": {"anchor": "last_active_at", "days": 1}
+    }
+    
+    # Добавляем chunking_strategy только для автоматического чанкования
+    # Для пользовательских чанков (JSONL с format="chunks") этот параметр не нужен
+    if use_auto_chunking:
+        # Параметры автоматического чанкования (значения по умолчанию из OpenAI SDK):
+        # - max_chunk_size_tokens: 800 (максимальный размер чанка)
+        # - chunk_overlap_tokens: 400 (размер перекрытия между чанками)
+        create_params["chunking_strategy"] = {
+            "type": "auto",
+            "auto": {
+                "max_chunk_size_tokens": 800,  # По умолчанию: 800
+                "chunk_overlap_tokens": 400    # По умолчанию: 400
+            }
+        }
+    
     # Используем нативный асинхронный клиент
-    vector_store = await async_client.vector_stores.create(
-        name=name,
-        file_ids=[file_id],
-        expires_after={"anchor": "last_active_at", "days": 1}
-    )
+    vector_store = await async_client.vector_stores.create(**create_params)
     
     store_id = vector_store.id
     print(f"Vector Store создан с ID: {store_id}")
@@ -159,11 +182,7 @@ def search_in_store(query: str, store_id: str) -> dict:
 2. Если информации нет в индексе - четко скажи: "В базе знаний нет информации по этому вопросу"
 3. НЕ придумывай информацию и НЕ используй общие знания
 4. Давай точные ответы на основе найденных фрагментов
-5. Если ответ неполный - укажи это
-
-Формат ответа:
-- Краткий и точный ответ на вопрос
-- Основан только на данных из индекса""",
+5. Если ответ неполный - укажи это""",
             tools=[{
                 "type": "file_search",
                 "vector_store_ids": [store_id],
@@ -240,7 +259,7 @@ async def initialize_stores():
             async def create_auto_store():
                 print("Режим A: Автоматическое чанкование")
                 file_id = await upload_file_async(AUTO_MODE_FILE, "text/plain")
-                store_id = await create_vector_store_async("FAQ Auto Chunking", file_id)
+                store_id = await create_vector_store_async("FAQ Auto Chunking", file_id, use_auto_chunking=True)
                 vector_stores["auto"] = store_id
                 print(f"✓ Режим A готов: {store_id}")
                 return {"status": "created", "store_id": store_id}
@@ -258,7 +277,7 @@ async def initialize_stores():
                     "application/jsonlines",
                     extra_body={"format": "chunks"}
                 )
-                store_id = await create_vector_store_async("FAQ Custom Chunks", file_id)
+                store_id = await create_vector_store_async("FAQ Custom Chunks", file_id, use_auto_chunking=False)
                 vector_stores["chunks"] = store_id
                 print(f"✓ Режим B готов: {store_id}")
                 return {"status": "created", "store_id": store_id}
