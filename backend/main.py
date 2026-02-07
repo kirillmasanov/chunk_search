@@ -4,7 +4,6 @@ AI Search Demo - Минимальный backend
 """
 
 import os
-import json
 import pathlib
 import asyncio
 from typing import Optional

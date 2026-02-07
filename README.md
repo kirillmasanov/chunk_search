@@ -12,10 +12,12 @@
 
 ```
 chunk_search/
+├── .env.example             # Пример конфигурации
+├── pyproject.toml           # Зависимости проекта
+├── Dockerfile               # Docker конфигурация
+├── docker-compose.yml       # Docker Compose конфигурация
 ├── backend/
 │   ├── main.py              # FastAPI сервер
-│   ├── requirements.txt     # Зависимости
-│   ├── .env.example         # Пример конфигурации
 │   └── .gitignore
 ├── frontend/
 │   └── index.html           # Веб-интерфейс
@@ -35,8 +37,6 @@ uv sync
 
 # Активировать окружение
 source .venv/bin/activate  # macOS/Linux
-# или
-.venv\Scripts\activate     # Windows
 ```
 
 > **Примечание**:
@@ -45,19 +45,23 @@ source .venv/bin/activate  # macOS/Linux
 
 ### 2. Настройка
 
-Создайте файл `.env` в директории `backend/`:
+Создайте файл `.env` в корне проекта:
 
 ```bash
-cd backend
+# Скопировать образец
 cp .env.example .env
+
+# Отредактировать и добавить свои credentials
+nano .env  # или vim .env
 ```
 
-Отредактируйте `.env` и добавьте свои credentials:
+Содержимое `.env`:
 
 ```bash
 YANDEX_API_KEY=your_api_key_here
 YANDEX_FOLDER_ID=your_folder_id_here
 YANDEX_CLOUD_MODEL=qwen3-235b-a22b-fp8/latest
+SERVER_PORT=8000
 ```
 
 ### 3. Запуск
@@ -71,12 +75,10 @@ uv run uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 Приложение будет доступно по адресу: **http://localhost:8000**
 
-#### Вариант 2: Запуск через Docker Compose (рекомендуется)
+#### Вариант 2: Запуск через Docker Compose
 
 ```bash
-# Создать .env файл в корне проекта
-cp backend/.env.example .env
-# Отредактировать .env с вашими credentials
+# Убедитесь, что .env файл создан в корне проекта (см. шаг 2)
 
 # Запустить приложение
 docker compose up -d
@@ -135,14 +137,14 @@ curl -X POST http://localhost:8000/api/search \
 Параметры:
 - `query` - текст запроса
 - `mode` - режим поиска: `"auto"` или `"chunks"`
-- `max_num_results` - максимальное количество результатов поиска (по умолчанию 3, диапазон 1-10)
+- `max_num_results` - максимальное количество результатов поиска
 
 ## Демо сценарий
 
 ### Режим A: Автоматическое чанкование
 
 1. Выберите "Режим A"
-2. Введите: "Можно ли работать без интернета?"
+2. Введите: "Какие операционные системы поддерживаются?"
 3. Результат: ответ модели, используемые фрагменты со score, полный ответ в JSON.
 
 ### Режим B: Пользовательские чанки
