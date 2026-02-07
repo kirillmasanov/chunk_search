@@ -30,17 +30,17 @@ CHUNKS_MODE_FILE = "faq_chunks.jsonl"  # Файл с готовыми чанка
 if not YANDEX_API_KEY or not YANDEX_FOLDER_ID:
     raise ValueError("YANDEX_API_KEY и YANDEX_FOLDER_ID должны быть установлены в .env файле")
 
-# Инициализация синхронного клиента для Yandex Cloud
+# Инициализация синхронного клиента для Yandex Cloud (для поиска и удаления)
 client = OpenAI(
     api_key=YANDEX_API_KEY,
-    base_url="https://rest-assistant.api.cloud.yandex.net/v1",
+    base_url="https://ai.api.cloud.yandex.net/v1",
     project=YANDEX_FOLDER_ID
 )
 
-# Инициализация асинхронного клиента для Yandex Cloud
+# Инициализация асинхронного клиента для Yandex Cloud (для загрузки и создания индексов)
 async_client = AsyncOpenAI(
     api_key=YANDEX_API_KEY,
-    base_url="https://rest-assistant.api.cloud.yandex.net/v1",
+    base_url="https://ai.api.cloud.yandex.net/v1",
     project=YANDEX_FOLDER_ID
 )
 
@@ -70,6 +70,7 @@ vector_stores = {
 class SearchRequest(BaseModel):
     query: str
     mode: str  # "auto" или "chunks"
+    max_num_results: int = 3  # Максимальное количество результатов (по умолчанию 3)
 
 class SearchResponse(BaseModel):
     answer: str
@@ -84,7 +85,7 @@ def get_data_path(filename: str) -> pathlib.Path:
     return pathlib.Path(__file__).parent.parent / "data" / filename
 
 
-async def upload_file_async(filename: str, content_type: str, extra_body: Optional[dict] = None) -> str:
+async def upload_file(filename: str, content_type: str, extra_body: Optional[dict] = None) -> str:
     """Асинхронно загрузить файл в Yandex Cloud AI Studio"""
     file_path = get_data_path(filename)
     
@@ -93,7 +94,7 @@ async def upload_file_async(filename: str, content_type: str, extra_body: Option
     
     print(f"Загружаем файл {filename}...")
     
-    # Используем нативный асинхронный клиент
+    # Используем асинхронный клиент
     with open(file_path, "rb") as f:
         file_response = await async_client.files.create(
             file=(filename, f, content_type),
@@ -105,45 +106,17 @@ async def upload_file_async(filename: str, content_type: str, extra_body: Option
     return file_response.id
 
 
-async def create_vector_store_async(name: str, file_id: str, use_auto_chunking: bool = True) -> str:
-    """Асинхронно создать Vector Store с файлом
+async def wait_for_vector_store(store_id: str, name: str) -> str:
+    """Асинхронное ожидание готовности Vector Store
     
     Args:
-        name: Название Vector Store
-        file_id: ID загруженного файла
-        use_auto_chunking: Использовать автоматическое чанкование (True) или пользовательские чанки (False)
+        store_id: ID Vector Store
+        name: Название для логирования
+    
+    Returns:
+        store_id если индекс готов
     """
-    print(f"Создаем Vector Store '{name}'...")
-    
-    # Параметры для создания Vector Store
-    create_params = {
-        "name": name,
-        "file_ids": [file_id],
-        "expires_after": {"anchor": "last_active_at", "days": 1}
-    }
-    
-    # Добавляем chunking_strategy только для автоматического чанкования
-    # Для пользовательских чанков (JSONL с format="chunks") этот параметр не нужен
-    if use_auto_chunking:
-        # Параметры автоматического чанкования (значения по умолчанию из OpenAI SDK):
-        # - max_chunk_size_tokens: 800 (максимальный размер чанка)
-        # - chunk_overlap_tokens: 400 (размер перекрытия между чанками)
-        create_params["chunking_strategy"] = {
-            "type": "auto",
-            "auto": {
-                "max_chunk_size_tokens": 800,  # По умолчанию: 800
-                "chunk_overlap_tokens": 400    # По умолчанию: 400
-            }
-        }
-    
-    # Используем нативный асинхронный клиент
-    vector_store = await async_client.vector_stores.create(**create_params)
-    
-    store_id = vector_store.id
-    print(f"Vector Store создан с ID: {store_id}")
-    
-    # Ожидание готовности индекса
-    print(f"Ожидаем готовности индекса {name}...")
+    print(f"Ожидаем готовности индекса '{name}'...")
     max_attempts = 60  # 2 минуты максимум
     attempt = 0
     
@@ -152,7 +125,7 @@ async def create_vector_store_async(name: str, file_id: str, use_auto_chunking: 
         status = store.status
         
         if status == "completed":
-            print(f"Vector Store '{name}' готов!")
+            print(f"✓ Vector Store '{name}' готов!")
             return store_id
         elif status == "failed":
             raise Exception(f"Ошибка при создании индекса '{name}'")
@@ -163,12 +136,94 @@ async def create_vector_store_async(name: str, file_id: str, use_auto_chunking: 
     raise TimeoutError(f"Превышено время ожидания готовности индекса '{name}'")
 
 
-def search_in_store(query: str, store_id: str) -> dict:
-    """Выполнить поиск в Vector Store"""
-    print(f"Выполняем поиск: '{query}' в store {store_id}")
+async def create_auto_chunking_store() -> str:
+    """Асинхронно создать Vector Store с автоматическим чанкованием
+    
+    Загружает текстовый файл и создает индекс с автоматическим разбиением на чанки.
+    
+    Returns:
+        ID созданного Vector Store
+    """
+    print("\n" + "-"*50)
+    print("Режим A: Автоматическое чанкование")
+    print("-"*50)
+    
+    # Загружаем текстовый файл
+    file_id = await upload_file(AUTO_MODE_FILE, "text/plain")
+    
+    # Создаем Vector Store с автоматическим чанкованием
+    print(f"Создаем Vector Store 'FAQ Auto Chunking'...")
+    vector_store = await async_client.vector_stores.create(
+        name="FAQ Auto Chunking",
+        file_ids=[file_id],
+        expires_after={"anchor": "last_active_at", "days": 1},
+        chunking_strategy={
+            "type": "static",
+            "static": {
+                "max_chunk_size_tokens": 200,
+                "chunk_overlap_tokens": 10
+            }
+        }
+    )
+    
+    store_id = vector_store.id
+    print(f"Vector Store создан с ID: {store_id}")
+    
+    # Ожидаем готовности
+    await wait_for_vector_store(store_id, "FAQ Auto Chunking")
+    
+    return store_id
+
+
+async def create_custom_chunks_store() -> str:
+    """Асинхронно создать Vector Store с пользовательскими чанками
+    
+    Загружает JSONL файл с готовыми чанками (format="chunks").
+    Каждая строка JSONL содержит готовый чанк с метаданными.
+    
+    Returns:
+        ID созданного Vector Store
+    """
+    print("\n" + "-"*50)
+    print("Режим B: Пользовательские чанки")
+    print("-"*50)
+    
+    # Загружаем JSONL файл с чанками
+    file_id = await upload_file(
+        CHUNKS_MODE_FILE,
+        "application/jsonlines",
+        extra_body={"format": "chunks"}
+    )
+    
+    # Создаем Vector Store без автоматического чанкования
+    # Для JSONL с format="chunks" параметр chunking_strategy не нужен
+    print(f"Создаем Vector Store 'FAQ Custom Chunks'...")
+    vector_store = await async_client.vector_stores.create(
+        name="FAQ Custom Chunks",
+        file_ids=[file_id],
+        expires_after={"anchor": "last_active_at", "days": 1}
+    )
+    
+    store_id = vector_store.id
+    print(f"Vector Store создан с ID: {store_id}")
+    
+    # Ожидаем готовности
+    await wait_for_vector_store(store_id, "FAQ Custom Chunks")
+    
+    return store_id
+
+
+def search_in_store(query: str, store_id: str, max_num_results: int = 3) -> dict:
+    """Выполнить поиск в Vector Store
+    
+    Args:
+        query: Поисковый запрос
+        store_id: ID Vector Store
+        max_num_results: Максимальное количество результатов (по умолчанию 3)
+    """
+    print(f"Выполняем поиск: '{query}' (max_results={max_num_results})")
     
     model_uri = f"gpt://{YANDEX_FOLDER_ID}/{YANDEX_CLOUD_MODEL}"
-    print(f"Model URI: {model_uri}")
     
     try:
         response = client.responses.create(
@@ -186,16 +241,13 @@ def search_in_store(query: str, store_id: str) -> dict:
             tools=[{
                 "type": "file_search",
                 "vector_store_ids": [store_id],
-                "max_num_results": 3
+                "max_num_results": max_num_results
             }],
             input=query
         )
         
-        print(f"Response received")
-        
         # Сохраняем сырой ответ
         raw_response = response.model_dump()
-        # print(json.dumps(raw_response, indent=2, ensure_ascii=False))
         
         # Извлекаем ответ и чанки из структуры response
         answer = ""
@@ -223,8 +275,7 @@ def search_in_store(query: str, store_id: str) -> dict:
                                     answer = content_item.text
                                     break
         
-        print(f"Extracted answer: {answer}")
-        print(f"Found {len(chunks)} chunks")
+        print(f"Найдено {len(chunks)} фрагментов")
         
         return {
             "answer": answer,
@@ -240,10 +291,10 @@ def search_in_store(query: str, store_id: str) -> dict:
 
 @app.post("/api/initialize")
 async def initialize_stores():
-    """Инициализация Vector Stores - создание индексов (асинхронно)"""
+    """Инициализация Vector Stores - параллельное создание индексов для обоих режимов"""
     print("\n" + "="*50)
-    print("Инициализация AI Search Demo (асинхронно)")
-    print("="*50 + "\n")
+    print("Инициализация AI Search Demo (параллельно)")
+    print("="*50)
     
     try:
         results = {
@@ -251,52 +302,35 @@ async def initialize_stores():
             "chunks": {"status": "skipped", "store_id": None}
         }
         
-        # Создаем задачи для параллельного выполнения
+        # Создаем список задач для параллельного выполнения
         tasks = []
+        task_modes = []
         
         # Режим A: Автоматическое чанкование
         if not vector_stores["auto"]:
-            async def create_auto_store():
-                print("Режим A: Автоматическое чанкование")
-                file_id = await upload_file_async(AUTO_MODE_FILE, "text/plain")
-                store_id = await create_vector_store_async("FAQ Auto Chunking", file_id, use_auto_chunking=True)
-                vector_stores["auto"] = store_id
-                print(f"✓ Режим A готов: {store_id}")
-                return {"status": "created", "store_id": store_id}
-            
-            tasks.append(("auto", create_auto_store()))
+            tasks.append(create_auto_chunking_store())
+            task_modes.append("auto")
         else:
+            print(f"\nРежим A уже существует: {vector_stores['auto']}")
             results["auto"] = {"status": "already_exists", "store_id": vector_stores["auto"]}
         
         # Режим B: Пользовательские чанки
         if not vector_stores["chunks"]:
-            async def create_chunks_store():
-                print("Режим B: Пользовательские чанки")
-                file_id = await upload_file_async(
-                    CHUNKS_MODE_FILE,
-                    "application/jsonlines",
-                    extra_body={"format": "chunks"}
-                )
-                store_id = await create_vector_store_async("FAQ Custom Chunks", file_id, use_auto_chunking=False)
-                vector_stores["chunks"] = store_id
-                print(f"✓ Режим B готов: {store_id}")
-                return {"status": "created", "store_id": store_id}
-            
-            tasks.append(("chunks", create_chunks_store()))
+            tasks.append(create_custom_chunks_store())
+            task_modes.append("chunks")
         else:
+            print(f"\nРежим B уже существует: {vector_stores['chunks']}")
             results["chunks"] = {"status": "already_exists", "store_id": vector_stores["chunks"]}
         
         # Выполняем задачи параллельно
         if tasks:
-            print(f"\nЗапускаем {len(tasks)} задач параллельно...")
-            task_results = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
+            print(f"\n🚀 Запускаем {len(tasks)} задач параллельно...\n")
+            store_ids = await asyncio.gather(*tasks)
             
-            # Обрабатываем результаты
-            for (mode, _), result in zip(tasks, task_results):
-                if isinstance(result, Exception):
-                    print(f"✗ Ошибка в режиме {mode}: {result}")
-                    raise result
-                results[mode] = result
+            # Сохраняем результаты
+            for mode, store_id in zip(task_modes, store_ids):
+                vector_stores[mode] = store_id
+                results[mode] = {"status": "created", "store_id": store_id}
         
         print("\n" + "="*50)
         print("✓ Инициализация завершена успешно!")
@@ -320,18 +354,6 @@ async def root():
     if frontend_path.exists():
         return FileResponse(frontend_path)
     return {"message": "AI Search Demo API", "docs": "/docs"}
-
-
-@app.get("/api/health")
-async def health_check():
-    """Проверка работоспособности"""
-    return {
-        "status": "healthy",
-        "vector_stores": {
-            "auto": vector_stores["auto"] is not None,
-            "chunks": vector_stores["chunks"] is not None
-        }
-    }
 
 
 @app.get("/api/stores")
@@ -476,7 +498,7 @@ async def search(request: SearchRequest):
         )
     
     try:
-        result = search_in_store(request.query, store_id)
+        result = search_in_store(request.query, store_id, request.max_num_results)
         return SearchResponse(
             answer=result["answer"],
             chunks=result["chunks"],

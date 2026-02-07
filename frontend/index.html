@@ -582,9 +582,21 @@
         <!-- Initialization section -->
         <div class="card" id="initSection">
             <div class="card-title">Начало работы</div>
-            <p style="color: #6c7380; margin-bottom: 16px; line-height: 1.5; font-size: 14px;">
-                Загрузите данные и создайте поисковые индексы
-            </p>
+            <div style="margin-bottom: 16px;">
+                <label for="maxResultsInput" style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 500; color: #1f2229;">
+                    Максимальное количество результатов поиска
+                </label>
+                <input
+                    type="number"
+                    id="maxResultsInput"
+                    class="search-input"
+                    value="3"
+                    min="1"
+                    max="10"
+                    style="width: 200px;"
+                    placeholder="3"
+                >
+            </div>
             <button class="btn btn-primary btn-full" onclick="initializeStores()" id="initBtn">
                 Загрузить данные и создать индексы
             </button>
@@ -705,6 +717,7 @@
     <script>
         let currentMode = 'auto';
         let storesInitialized = false;
+        let maxNumResults = 3; // Значение по умолчанию
         let resultsCache = {
             'auto': null,
             'chunks': null
@@ -845,7 +858,11 @@
                 const response = await fetch('/api/search', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: query, mode: currentMode })
+                    body: JSON.stringify({
+                        query: query,
+                        mode: currentMode,
+                        max_num_results: maxNumResults
+                    })
                 });
 
                 if (!response.ok) {
@@ -1030,13 +1047,29 @@
             }
         });
 
-        // Check health on load
+        // Update max_num_results when input changes
+        document.addEventListener('DOMContentLoaded', () => {
+            const maxResultsInput = document.getElementById('maxResultsInput');
+            if (maxResultsInput) {
+                maxResultsInput.addEventListener('change', (e) => {
+                    const value = parseInt(e.target.value);
+                    if (value >= 1 && value <= 10) {
+                        maxNumResults = value;
+                    } else {
+                        e.target.value = maxNumResults;
+                        showError('Значение должно быть от 1 до 10');
+                    }
+                });
+            }
+        });
+
+        // Check stores on load
         window.addEventListener('load', async () => {
             try {
-                const response = await fetch('/api/health');
+                const response = await fetch('/api/stores');
                 const data = await response.json();
                 
-                if (data.vector_stores.auto && data.vector_stores.chunks) {
+                if (data.auto && data.chunks) {
                     storesInitialized = true;
                     document.getElementById('initSection').classList.add('hidden');
                     document.getElementById('modeSection').classList.remove('hidden');
@@ -1044,7 +1077,7 @@
                     document.getElementById('resetSection').classList.remove('hidden');
                 }
             } catch (error) {
-                showError('Не удалось подключиться к серверу');
+                console.error('Не удалось подключиться к серверу:', error);
             }
         });
     </script>

@@ -30,22 +30,18 @@ chunk_search/
 ### 1. Установка зависимостей
 
 ```bash
-cd backend
-
-# Создать виртуальное окружение с uv
-uv venv
+# Установить зависимости и создать виртуальное окружение
+uv sync
 
 # Активировать окружение
-source .venv/bin/activate
-
-# Установить зависимости
-uv pip install -r requirements.txt
+source .venv/bin/activate  # macOS/Linux
+# или
+.venv\Scripts\activate     # Windows
 ```
 
-> **Примечание**: Если у вас не установлен uv, установите его:
-> ```bash
-> curl -LsSf https://astral.sh/uv/install.sh | sh
-> ```
+> **Примечание**:
+> - Если у вас не установлен uv, установите его: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+> - Команда `uv sync` автоматически создает виртуальное окружение и устанавливает все зависимости из `pyproject.toml`
 
 ### 2. Настройка
 
@@ -131,13 +127,15 @@ curl -X POST http://localhost:8000/api/search \
   -H "Content-Type: application/json" \
   -d '{
     "query": "Как создать виртуальную машину?",
-    "mode": "chunks"
+    "mode": "chunks",
+    "max_num_results": 3
   }'
 ```
 
 Параметры:
 - `query` - текст запроса
 - `mode` - режим поиска: `"auto"` или `"chunks"`
+- `max_num_results` - максимальное количество результатов поиска (по умолчанию 3, диапазон 1-10)
 
 ## Демо сценарий
 
@@ -163,22 +161,48 @@ curl -X POST http://localhost:8000/api/search \
 
 ## Как это работает
 
+### Архитектура
+
+- **Асинхронные операции**: Использование `AsyncOpenAI` для параллельной загрузки файлов и создания индексов
+- **Параллельное выполнение**: Оба режима (A и B) создаются одновременно через `asyncio.gather()`
+- **Настраиваемый поиск**: Возможность изменить количество результатов поиска
+
 ### Ключевое отличие в коде
 
 **Режим A** (автоматическое чанкование):
 ```python
-file = client.files.create(
-    file=(filename, content, "text/plain"),
-    purpose="assistants"
+# Загрузка файла
+file_id = await upload_file(AUTO_MODE_FILE, "text/plain")
+
+# Создание Vector Store с автоматическим чанкованием
+vector_store = await async_client.vector_stores.create(
+    name="FAQ Auto Chunking",
+    file_ids=[file_id],
+    expires_after={"anchor": "last_active_at", "days": 1},
+    chunking_strategy={
+        "type": "static",
+        "static": {
+            "max_chunk_size_tokens": 800,
+            "chunk_overlap_tokens": 400
+        }
+    }
 )
 ```
 
 **Режим B** (пользовательские чанки):
 ```python
-file = client.files.create(
-    file=(filename, content, "application/jsonlines"),
-    purpose="assistants",
+# Загрузка файла с указанием формата chunks
+file_id = await upload_file(
+    CHUNKS_MODE_FILE,
+    "application/jsonlines",
     extra_body={"format": "chunks"}  # ← Ключевое!
+)
+
+# Создание Vector Store без автоматического чанкования
+vector_store = await async_client.vector_stores.create(
+    name="FAQ Custom Chunks",
+    file_ids=[file_id],
+    expires_after={"anchor": "last_active_at", "days": 1}
 )
 ```
 
@@ -201,20 +225,26 @@ file = client.files.create(
 ### Структура backend
 
 - `main.py` - весь код в одном файле
-- Индексы создаются по запросу через кнопку в UI или API
+- Асинхронные операции для загрузки и создания индексов
+- Параллельное создание обоих режимов
 - Endpoints:
   - `GET /` - веб-интерфейс
   - `GET /api/stores` - ID Vector Stores
-  - `POST /api/initialize` - создание индексов
-  - `POST /api/reset` - удаление индексов
-  - `POST /api/search` - поиск
+  - `GET /api/data/{mode}` - просмотр исходных файлов
+  - `POST /api/initialize` - создание индексов (параллельно)
+  - `POST /api/reset` - удаление индексов и файлов
+  - `POST /api/search` - поиск с настраиваемым количеством результатов
+
+### Ключевые функции
+
+- `upload_file()` - асинхронная загрузка файлов
+- `wait_for_vector_store()` - асинхронное ожидание готовности индекса
+- `create_auto_chunking_store()` - создание индекса с автоматическим чанкованием
+- `create_custom_chunks_store()` - создание индекса с пользовательскими чанками
+- `search_in_store()` - поиск с настраиваемым max_num_results
 
 ## Документация
 
 - [Yandex Cloud AI Studio](https://yandex.cloud/ru/docs/ai-studio/)
 - [Vector Store API](https://yandex.cloud/ru/docs/ai-studio/concepts/search/vectorstore)
 - [Создание агента с чанками](https://yandex.cloud/ru/docs/ai-studio/operations/agents/create-prechunked-search-agent)
-
-## Дополнительные материалы
-
-Для детальной информации о проекте см. [`BLUEPRINT.md`](BLUEPRINT.md) - полный blueprint проекта с архитектурой, сценариями использования и инструкциями по развертыванию.
