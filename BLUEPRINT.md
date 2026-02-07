@@ -301,15 +301,14 @@ echo "API Key: $API_KEY"
 
 ### 4.4. Настройка переменных окружения
 
-Создайте файл `.env` в директории `backend/`:
+Создайте файл `.env` в корне проекта на основе `.env.example`:
 
 ```bash
-cd backend
-cat > .env << EOF
-YANDEX_API_KEY=<ваш_api_ключ>
-YANDEX_FOLDER_ID=<ваш_folder_id>
-YANDEX_CLOUD_MODEL=qwen3-235b-a22b-fp8/latest
-EOF
+# Скопировать образец
+cp .env.example .env
+
+# Отредактировать файл и заменить значения
+nano .env  # или vim .env
 ```
 
 **Автоматическое создание через CLI:**
@@ -322,45 +321,18 @@ API_KEY=$(yc iam api-key create \
   --scopes yc.ai.foundationModels.execute \
   --format json | jq -r '.secret')
 
-cd backend
-cat > .env << EOF
-YANDEX_API_KEY=$API_KEY
-YANDEX_FOLDER_ID=$FOLDER_ID
-YANDEX_CLOUD_MODEL=qwen3-235b-a22b-fp8/latest
-EOF
-
-echo "Файл .env создан успешно"
-```
-
-**Для Docker Compose:**
-
-Создайте `.env` файл в корне проекта на основе `.env.example`:
-
-```bash
-# Вернуться в корень проекта (если вы в backend/)
-cd ..
-
-# Скопировать образец и заполнить значения
-cp .env.example .env
-
-# Автоматическое заполнение через CLI (если настроен yc)
+# Создать .env в корне проекта
 cat > .env << EOF
 YANDEX_API_KEY=$API_KEY
 YANDEX_FOLDER_ID=$FOLDER_ID
 YANDEX_CLOUD_MODEL=qwen3-235b-a22b-fp8/latest
 SERVER_PORT=8000
 EOF
+
+echo "Файл .env создан успешно в корне проекта"
 ```
 
-**Или вручную:**
-
-```bash
-# Скопировать образец
-cp .env.example .env
-
-# Отредактировать файл и заменить значения
-nano .env  # или vim .env
-```
+**Примечание:** Файл `.env` должен находиться в корне проекта (рядом с `docker-compose.yml`), а не в директории `backend/`. Это обеспечивает единообразие для локальной разработки и Docker.
 
 ---
 

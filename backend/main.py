@@ -15,8 +15,9 @@ from pydantic import BaseModel
 from openai import OpenAI, AsyncOpenAI
 from dotenv import load_dotenv
 
-# Загрузка переменных окружения
-load_dotenv()
+# Загрузка переменных окружения из корня проекта
+env_path = pathlib.Path(__file__).parent.parent / ".env"
+load_dotenv(env_path)
 
 # Конфигурация
 YANDEX_API_KEY = os.getenv("YANDEX_API_KEY")
