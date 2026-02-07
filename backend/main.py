@@ -126,7 +126,7 @@ async def wait_for_vector_store(store_id: str, name: str) -> str:
         status = store.status
         
         if status == "completed":
-            print(f"✓ Vector Store '{name}' готов!")
+            print(f"Vector Store '{name}' готов!")
             return store_id
         elif status == "failed":
             raise Exception(f"Ошибка при создании индекса '{name}'")
@@ -325,7 +325,7 @@ async def initialize_stores():
         
         # Выполняем задачи параллельно
         if tasks:
-            print(f"\n🚀 Запускаем {len(tasks)} задач параллельно...\n")
+            print(f"\nЗапускаем {len(tasks)} задач параллельно...\n")
             store_ids = await asyncio.gather(*tasks)
             
             # Сохраняем результаты
@@ -334,7 +334,7 @@ async def initialize_stores():
                 results[mode] = {"status": "created", "store_id": store_id}
         
         print("\n" + "="*50)
-        print("✓ Инициализация завершена успешно!")
+        print("Инициализация завершена успешно!")
         print("="*50 + "\n")
         
         return {
@@ -344,7 +344,7 @@ async def initialize_stores():
         }
         
     except Exception as e:
-        print(f"\n✗ Ошибка при инициализации: {e}\n")
+        print(f"\nОшибка при инициализации: {e}\n")
         raise HTTPException(status_code=500, detail=f"Ошибка при инициализации: {str(e)}")
 
 
