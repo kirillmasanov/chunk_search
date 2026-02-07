@@ -165,6 +165,49 @@ cd chunk_search
 # Docker автоматически установит все зависимости при сборке
 ```
 
+#### Установка Docker (Ubuntu)
+
+Если Docker еще не установлен на вашей системе Ubuntu, выполните следующие команды:
+
+```bash
+# Обновление списка пакетов
+sudo apt-get update
+
+# Установка необходимых пакетов
+sudo apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+
+# Добавление официального GPG ключа Docker
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+# Добавление репозитория Docker
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Обновление списка пакетов
+sudo apt-get update
+
+# Установка Docker Engine, containerd и Docker Compose
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Добавление текущего пользователя в группу docker (чтобы не использовать sudo)
+sudo usermod -aG docker $USER
+
+# Применение изменений в группах (требуется перелогиниться или выполнить)
+newgrp docker
+
+# Проверка установки
+docker --version
+docker compose version
+```
+
+**Примечание:** После добавления пользователя в группу `docker` может потребоваться выход из системы и повторный вход для применения изменений.
+
 ### Настройка Yandex Cloud CLI (опционально)
 
 Для автоматизации создания ресурсов установите Yandex Cloud CLI:
@@ -291,16 +334,32 @@ echo "Файл .env создан успешно"
 
 **Для Docker Compose:**
 
-Создайте `.env` файл в корне проекта:
+Создайте `.env` файл в корне проекта на основе `.env.example`:
 
 ```bash
-cd ..  # вернуться в корень проекта
+# Вернуться в корень проекта (если вы в backend/)
+cd ..
+
+# Скопировать образец и заполнить значения
+cp .env.example .env
+
+# Автоматическое заполнение через CLI (если настроен yc)
 cat > .env << EOF
 YANDEX_API_KEY=$API_KEY
 YANDEX_FOLDER_ID=$FOLDER_ID
 YANDEX_CLOUD_MODEL=qwen3-235b-a22b-fp8/latest
 SERVER_PORT=8000
 EOF
+```
+
+**Или вручную:**
+
+```bash
+# Скопировать образец
+cp .env.example .env
+
+# Отредактировать файл и заменить значения
+nano .env  # или vim .env
 ```
 
 ---
@@ -326,8 +385,19 @@ uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ### Вариант 2: Запуск с использованием Docker
 
+**Важно:** Перед запуском Docker убедитесь, что вы создали `.env` файл в корне проекта (см. раздел 4.4 "Настройка переменных окружения"). Без этого файла приложение не сможет подключиться к Yandex Cloud AI Studio.
+
 ```bash
 # Из корня проекта
+# Создайте .env файл на основе образца
+cp .env.example .env
+
+# Отредактируйте .env и укажите ваши значения
+nano .env  # или vim .env
+
+# Убедитесь, что .env файл создан и содержит правильные значения
+cat .env
+
 # Сборка и запуск контейнера
 docker compose up -d
 
@@ -339,6 +409,8 @@ docker compose ps
 ```
 
 Приложение будет доступно на порту **8000** (или на порту, указанном в переменной `SERVER_PORT`).
+
+**Примечание:** Если вы видите предупреждения о неустановленных переменных окружения (YANDEX_API_KEY, YANDEX_FOLDER_ID), это означает, что `.env` файл не создан или находится не в корне проекта, или содержит пустые значения.
 
 ### Проверка работоспособности
 

@@ -1,8 +1,8 @@
-version: '3.8'
-
 services:
   ai-search-demo:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: ai-search-demo
     ports:
       - "${SERVER_PORT:-8000}:8000"
@@ -16,7 +16,7 @@ services:
       - ./data:/app/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/stores"]
       interval: 30s
       timeout: 10s
       retries: 3
