@@ -24,8 +24,8 @@ YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID")
 YANDEX_CLOUD_MODEL = os.getenv("YANDEX_CLOUD_MODEL", "qwen3-235b-a22b-fp8/latest")
 
 # Файлы данных для каждого режима
-AUTO_MODE_FILE = "faq.txt"  # Файл для автоматического чанкования
-CHUNKS_MODE_FILE = "faq_chunks.jsonl"  # Файл с готовыми чанками
+AUTO_MODE_FILE = "faq_demo_chunks.txt"  # Файл для автоматического чанкования
+CHUNKS_MODE_FILE = "faq_chunks_demo_chunks.jsonl"  # Файл с готовыми чанками
 
 if not YANDEX_API_KEY or not YANDEX_FOLDER_ID:
     raise ValueError("YANDEX_API_KEY и YANDEX_FOLDER_ID должны быть установлены в .env файле")
@@ -162,9 +162,9 @@ async def create_auto_chunking_store(max_chunk_size_tokens: int = 800, chunk_ove
     file_id = await upload_file(AUTO_MODE_FILE, "text/plain")
     
     # Создаем Vector Store с автоматическим чанкованием
-    print(f"Создаем Vector Store 'FAQ Auto Chunking'...")
+    print(f"Создаем Vector Store 'FAQ Auto Chunking for Demo chunk_search'...")
     vector_store = await async_client.vector_stores.create(
-        name="FAQ Auto Chunking",
+        name="FAQ Auto Chunking for Demo chunk_search",
         file_ids=[file_id],
         expires_after={"anchor": "last_active_at", "days": 1},
         chunking_strategy={
@@ -180,7 +180,7 @@ async def create_auto_chunking_store(max_chunk_size_tokens: int = 800, chunk_ove
     print(f"Vector Store создан с ID: {store_id}")
     
     # Ожидаем готовности
-    await wait_for_vector_store(store_id, "FAQ Auto Chunking")
+    await wait_for_vector_store(store_id, "FAQ Auto Chunking for Demo chunk_search")
     
     return store_id
 
@@ -207,9 +207,9 @@ async def create_custom_chunks_store() -> str:
     
     # Создаем Vector Store без автоматического чанкования
     # Для JSONL с format="chunks" параметр chunking_strategy не нужен
-    print(f"Создаем Vector Store 'FAQ Custom Chunks'...")
+    print(f"Создаем Vector Store 'FAQ Custom Chunks for Demo chunk_search'...")
     vector_store = await async_client.vector_stores.create(
-        name="FAQ Custom Chunks",
+        name="FAQ Custom Chunks for Demo chunk_search",
         file_ids=[file_id],
         expires_after={"anchor": "last_active_at", "days": 1}
     )
@@ -218,7 +218,7 @@ async def create_custom_chunks_store() -> str:
     print(f"Vector Store создан с ID: {store_id}")
     
     # Ожидаем готовности
-    await wait_for_vector_store(store_id, "FAQ Custom Chunks")
+    await wait_for_vector_store(store_id, "FAQ Custom Chunks for Demo chunk_search")
     
     return store_id
 
