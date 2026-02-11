@@ -67,6 +67,10 @@ vector_stores = {
 }
 
 # Pydantic модели
+class InitializeRequest(BaseModel):
+    max_chunk_size_tokens: int = 800  # Максимальный размер чанка в токенах
+    chunk_overlap_tokens: int = 400  # Перекрытие чанков в токенах
+
 class SearchRequest(BaseModel):
     query: str
     mode: str  # "auto" или "chunks"
@@ -136,16 +140,22 @@ async def wait_for_vector_store(store_id: str, name: str) -> str:
     raise TimeoutError(f"Превышено время ожидания готовности индекса '{name}'")
 
 
-async def create_auto_chunking_store() -> str:
+async def create_auto_chunking_store(max_chunk_size_tokens: int = 800, chunk_overlap_tokens: int = 400) -> str:
     """Асинхронно создать Vector Store с автоматическим чанкованием
     
     Загружает текстовый файл и создает индекс с автоматическим разбиением на чанки.
+    
+    Args:
+        max_chunk_size_tokens: Максимальный размер чанка в токенах (по умолчанию 800)
+        chunk_overlap_tokens: Перекрытие чанков в токенах (по умолчанию 400)
     
     Returns:
         ID созданного Vector Store
     """
     print("\n" + "-"*50)
     print("Режим A: Автоматическое чанкование")
+    print(f"  max_chunk_size_tokens: {max_chunk_size_tokens}")
+    print(f"  chunk_overlap_tokens: {chunk_overlap_tokens}")
     print("-"*50)
     
     # Загружаем текстовый файл
@@ -160,8 +170,8 @@ async def create_auto_chunking_store() -> str:
         chunking_strategy={
             "type": "static",
             "static": {
-                "max_chunk_size_tokens": 200,
-                "chunk_overlap_tokens": 10
+                "max_chunk_size_tokens": max_chunk_size_tokens,
+                "chunk_overlap_tokens": chunk_overlap_tokens
             }
         }
     )
@@ -290,10 +300,23 @@ def search_in_store(query: str, store_id: str, max_num_results: int = 3) -> dict
 
 
 @app.post("/api/initialize")
-async def initialize_stores():
-    """Инициализация Vector Stores - параллельное создание индексов для обоих режимов"""
+async def initialize_stores(request: InitializeRequest = None):
+    """Инициализация Vector Stores - параллельное создание индексов для обоих режимов
+    
+    Args:
+        request: Параметры инициализации (max_chunk_size_tokens, chunk_overlap_tokens)
+    """
+    # Используем значения по умолчанию, если request не передан
+    if request is None:
+        request = InitializeRequest()
+    
+    max_chunk_size_tokens = request.max_chunk_size_tokens
+    chunk_overlap_tokens = request.chunk_overlap_tokens
+    
     print("\n" + "="*50)
     print("Инициализация AI Search Demo (параллельно)")
+    print(f"  max_chunk_size_tokens: {max_chunk_size_tokens}")
+    print(f"  chunk_overlap_tokens: {chunk_overlap_tokens}")
     print("="*50)
     
     try:
@@ -308,7 +331,7 @@ async def initialize_stores():
         
         # Режим A: Автоматическое чанкование
         if not vector_stores["auto"]:
-            tasks.append(create_auto_chunking_store())
+            tasks.append(create_auto_chunking_store(max_chunk_size_tokens, chunk_overlap_tokens))
             task_modes.append("auto")
         else:
             print(f"\nРежим A уже существует: {vector_stores['auto']}")

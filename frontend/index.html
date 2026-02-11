@@ -582,6 +582,8 @@
         <!-- Initialization section -->
         <div class="card" id="initSection">
             <div class="card-title">Начало работы</div>
+            
+            <!-- Max results parameter -->
             <div style="margin-bottom: 16px;">
                 <label for="maxResultsInput" style="display: block; margin-bottom: 8px; font-size: 14px; font-weight: 500; color: #1f2229;">
                     Максимальное количество результатов поиска
@@ -597,6 +599,48 @@
                     placeholder="3"
                 >
             </div>
+            
+            <!-- Chunking parameters for Mode A -->
+            <div style="margin-bottom: 20px; padding: 16px; background: #f5f7fa; border-radius: 8px;">
+                <div style="font-size: 14px; font-weight: 600; color: #1f2229; margin-bottom: 12px;">
+                    Параметры автоматического чанкования
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label for="maxChunkSizeInput" style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 500; color: #6c7380;">
+                            Максимальный размер чанка (токены)
+                        </label>
+                        <input
+                            type="number"
+                            id="maxChunkSizeInput"
+                            class="search-input"
+                            value="800"
+                            min="100"
+                            max="4096"
+                            style="width: 100%;"
+                            placeholder="800"
+                        >
+                        <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">От 100 до 4096 токенов</div>
+                    </div>
+                    <div>
+                        <label for="chunkOverlapInput" style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 500; color: #6c7380;">
+                            Перекрытие чанков (токены)
+                        </label>
+                        <input
+                            type="number"
+                            id="chunkOverlapInput"
+                            class="search-input"
+                            value="400"
+                            min="0"
+                            max="2048"
+                            style="width: 100%;"
+                            placeholder="400"
+                        >
+                        <div style="font-size: 11px; color: #9ca3af; margin-top: 4px;">Не более половины размера чанка</div>
+                    </div>
+                </div>
+            </div>
+            
             <button class="btn btn-primary btn-full" onclick="initializeStores()" id="initBtn">
                 Загрузить данные и создать индексы
             </button>
@@ -718,6 +762,8 @@
         let currentMode = 'auto';
         let storesInitialized = false;
         let maxNumResults = 3; // Значение по умолчанию
+        let maxChunkSizeTokens = 800; // Значение по умолчанию
+        let chunkOverlapTokens = 400; // Значение по умолчанию
         let resultsCache = {
             'auto': null,
             'chunks': null
@@ -728,6 +774,27 @@
             const initBtn = document.getElementById('initBtn');
             const loading = document.getElementById('loading');
             
+            // Get chunking parameters
+            const maxChunkSizeInput = document.getElementById('maxChunkSizeInput');
+            const chunkOverlapInput = document.getElementById('chunkOverlapInput');
+            
+            if (maxChunkSizeInput) {
+                maxChunkSizeTokens = parseInt(maxChunkSizeInput.value) || 800;
+            }
+            if (chunkOverlapInput) {
+                chunkOverlapTokens = parseInt(chunkOverlapInput.value) || 400;
+            }
+            
+            // Validate parameters
+            if (maxChunkSizeTokens < 100 || maxChunkSizeTokens > 4096) {
+                showError('Максимальный размер чанка должен быть от 100 до 4096 токенов');
+                return;
+            }
+            if (chunkOverlapTokens < 0 || chunkOverlapTokens > maxChunkSizeTokens / 2) {
+                showError('Перекрытие чанков не должно превышать половину размера чанка');
+                return;
+            }
+            
             initBtn.disabled = true;
             initBtn.textContent = 'Создание индексов...';
             loading.classList.remove('hidden');
@@ -737,7 +804,11 @@
             try {
                 const response = await fetch('/api/initialize', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        max_chunk_size_tokens: maxChunkSizeTokens,
+                        chunk_overlap_tokens: chunkOverlapTokens
+                    })
                 });
 
                 if (!response.ok) {
