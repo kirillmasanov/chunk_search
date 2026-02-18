@@ -802,7 +802,7 @@
             clearError();
 
             try {
-                const response = await fetch('/api/initialize', {
+                const response = await fetch('api/initialize', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -851,7 +851,7 @@
             document.getElementById('loadingText').textContent = 'Удаление индексов...';
 
             try {
-                const response = await fetch('/api/reset', {
+                const response = await fetch('api/reset', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });
@@ -937,7 +937,7 @@
             clearError();
 
             try {
-                const response = await fetch('/api/search', {
+                const response = await fetch('api/search', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1096,7 +1096,7 @@
         // View data file
         async function viewDataFile(mode) {
             try {
-                const response = await fetch(`/api/data/${mode}`);
+                const response = await fetch(`api/data/${mode}`);
                 if (!response.ok) {
                     throw new Error('Не удалось загрузить файл');
                 }
@@ -1149,7 +1149,7 @@
         // Check stores on load
         window.addEventListener('load', async () => {
             try {
-                const response = await fetch('/api/stores');
+                const response = await fetch('api/stores');
                 const data = await response.json();
                 
                 if (data.auto && data.chunks) {

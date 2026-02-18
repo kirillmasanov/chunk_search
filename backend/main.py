@@ -379,6 +379,15 @@ async def root():
     return {"message": "AI Search Demo API", "docs": "/docs"}
 
 
+@app.get("/api/health")
+async def health():
+    """Health check для Docker и мониторинга"""
+    return {
+        "status": "ok",
+        "stores_initialized": all(v is not None for v in vector_stores.values()),
+    }
+
+
 @app.get("/api/stores")
 async def get_stores():
     """Получить ID Vector Stores"""
