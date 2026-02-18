@@ -812,8 +812,9 @@
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка при инициализации');
+                    const err = await response.json();
+                    const msg = Array.isArray(err.detail) ? err.detail.map(d => d.msg || JSON.stringify(d)).join('; ') : (err.detail || 'Ошибка при инициализации');
+                    throw new Error(msg);
                 }
 
                 const data = await response.json();
@@ -856,8 +857,9 @@
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка при сбросе');
+                    const err = await response.json();
+                    const msg = Array.isArray(err.detail) ? err.detail.map(d => d.msg || JSON.stringify(d)).join('; ') : (err.detail || 'Ошибка при сбросе');
+                    throw new Error(msg);
                 }
 
                 storesInitialized = false;
@@ -916,6 +918,15 @@
                 return;
             }
 
+            // Берём актуальное значение из поля (на случай если пользователь не вызывал change)
+            const maxResultsInput = document.getElementById('maxResultsInput');
+            if (maxResultsInput) {
+                const value = parseInt(maxResultsInput.value, 10);
+                if (value >= 1 && value <= 10) {
+                    maxNumResults = value;
+                }
+            }
+
             const loading = document.getElementById('loading');
             const searchBtn = document.getElementById('searchBtn');
             
@@ -937,8 +948,9 @@
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка при поиске');
+                    const err = await response.json();
+                    const msg = Array.isArray(err.detail) ? err.detail.map(d => d.msg || JSON.stringify(d)).join('; ') : (err.detail || 'Ошибка при поиске');
+                    throw new Error(msg);
                 }
 
                 const data = await response.json();
